@@ -9,7 +9,9 @@
   body { font-family: -apple-system, system-ui, sans-serif; background: #1a1a1a; color: #ddd; padding: 20px; }
   h1 { font-size: 1.3rem; margin-bottom: 16px; color: #aaa; font-weight: 400; }
   .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  select, button { font-size: 0.9rem; padding: 6px 12px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #ddd; cursor: pointer; }
+  select, button, input[type="text"] { font-size: 0.9rem; padding: 6px 12px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #ddd; }
+  input[type="text"] { width: 160px; }
+  select, button { cursor: pointer; }
   button:hover { background: #3a3a3a; }
   button:disabled { opacity: 0.4; cursor: default; }
   .nav-btn { font-size: 1.2rem; padding: 6px 14px; }
@@ -69,6 +71,7 @@
 <h1>GLO Color Picker</h1>
 
 <div class="controls">
+  <input id="projectInput" type="text" placeholder="Project (e.g. sw2026)" spellcheck="false">
   <select id="placeSelect"><option value="">Select a place...</option></select>
   <button class="nav-btn" id="prevBtn" disabled>&larr;</button>
   <span class="image-label" id="imageLabel">-</span>
@@ -155,9 +158,9 @@ function loadCurrentImage() {
 
   const img = new Image();
   img.onload = () => {
-    // Scale to fit max 800px wide
-    const maxW = 800;
-    const scale = Math.min(1, maxW / img.width);
+    // Scale to fit max 800px wide, 600px tall
+    const maxW = 800, maxH = 600;
+    const scale = Math.min(1, maxW / img.width, maxH / img.height);
     canvas.width = Math.round(img.width * scale);
     canvas.height = Math.round(img.height * scale);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -314,10 +317,11 @@ document.getElementById('clearBtn').addEventListener('click', () => {
 
 document.getElementById('saveBtn').addEventListener('click', () => {
   if (!palette.length || !currentPlace) return;
+  const project = document.getElementById('projectInput').value.trim();
   fetch(`/api/palettes/${currentPlace}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ colors: palette }),
+    body: JSON.stringify({ colors: palette, project: project || null }),
   })
     .then(r => r.json())
     .then(data => {

@@ -60,17 +60,21 @@ def save_palette(name):
     if not colors:
         return jsonify({"error": "no colors provided"}), 400
 
+    project = data.get("project")
+
     centers = np.array(colors, dtype=np.uint8)
     counts = np.ones(len(colors), dtype=np.int64)
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = OUTPUT_DIR / project if project else OUTPUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    img_path = OUTPUT_DIR / f"{name}_picked.png"
+    img_path = out_dir / f"{name}_picked.png"
     save_palette_image(centers, counts, img_path)
 
-    json_path = OUTPUT_DIR / f"{name}_picked.json"
+    json_path = out_dir / f"{name}_picked.json"
     result = {
         "name": name,
+        "project": project,
         "source": "manual",
         "n_colors": len(colors),
         "colors": [{"rgb": c} for c in colors],
