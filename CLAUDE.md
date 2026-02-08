@@ -61,7 +61,7 @@ See `docs/assessment.md` for detailed analysis. Key opportunities:
 
 ## Workflow
 
-1. Copy photos from a trip into `data/palettes/{place}/photos/`
+1. Copy photos from a trip into `data/images/{place}/photos/`
 2. Set `PROJECT_SLUG` in notebook to the place name
 3. Run cells to extract and visualize palettes
 4. Export palette strips for reference while painting
