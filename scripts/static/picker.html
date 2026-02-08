@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLO Color Picker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, system-ui, sans-serif; background: #1a1a1a; color: #ddd; padding: 20px; }
+  h1 { font-size: 1.3rem; margin-bottom: 16px; color: #aaa; font-weight: 400; }
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  select, button { font-size: 0.9rem; padding: 6px 12px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #ddd; cursor: pointer; }
+  button:hover { background: #3a3a3a; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .nav-btn { font-size: 1.2rem; padding: 6px 14px; }
+  .image-label { color: #888; font-size: 0.85rem; min-width: 60px; text-align: center; }
+
+  .canvas-wrap { position: relative; display: inline-block; cursor: crosshair; margin-bottom: 16px; }
+  canvas { display: block; max-width: 100%; border-radius: 4px; }
+  .loupe {
+    position: absolute; pointer-events: none; display: none;
+    width: 80px; height: 80px; border-radius: 50%;
+    border: 3px solid #fff; box-shadow: 0 0 8px rgba(0,0,0,0.6);
+    image-rendering: pixelated; overflow: hidden;
+  }
+  .loupe canvas { width: 80px; height: 80px; }
+  .crosshair { position: absolute; pointer-events: none; display: none; }
+  .crosshair-h, .crosshair-v {
+    position: absolute; background: rgba(255,255,255,0.5);
+  }
+  .crosshair-h { width: 16px; height: 1px; left: -8px; top: 0; }
+  .crosshair-v { width: 1px; height: 16px; left: 0; top: -8px; }
+
+  .sidebar { display: flex; flex-direction: column; gap: 16px; margin-left: 16px; min-width: 200px; }
+  .color-info {
+    padding: 8px 14px;
+    background: #2a2a2a; border-radius: 4px; font-family: monospace;
+    font-size: 0.9rem; min-width: 160px;
+  }
+  .color-preview { display: inline-block; width: 18px; height: 18px; border-radius: 3px; vertical-align: middle; margin-right: 8px; border: 1px solid #555; }
+
+  .palette-section { }
+  .palette-section h2 { font-size: 0.95rem; color: #888; font-weight: 400; margin-bottom: 8px; }
+  .swatches { display: flex; gap: 4px; flex-wrap: wrap; min-height: 50px; padding: 8px; background: #222; border-radius: 4px; }
+  .swatch {
+    width: 50px; height: 50px; border-radius: 4px; cursor: pointer;
+    border: 2px solid transparent; position: relative; transition: border-color 0.15s;
+  }
+  .swatch:hover { border-color: #fff; }
+  .swatch .remove {
+    position: absolute; top: -6px; right: -6px; width: 16px; height: 16px;
+    background: #c00; color: #fff; border-radius: 50%; font-size: 11px;
+    line-height: 16px; text-align: center; display: none; cursor: pointer;
+  }
+  .swatch:hover .remove { display: block; }
+  .swatch-info {
+    position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%);
+    font-size: 0.65rem; font-family: monospace; white-space: nowrap; color: #999;
+    display: none; pointer-events: none;
+  }
+  .swatch:hover .swatch-info { display: block; }
+
+  .palette-actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .status { margin-left: 12px; font-size: 0.85rem; color: #6a6; }
+</style>
+</head>
+<body>
+
+<h1>GLO Color Picker</h1>
+
+<div class="controls">
+  <select id="placeSelect"><option value="">Select a place...</option></select>
+  <button class="nav-btn" id="prevBtn" disabled>&larr;</button>
+  <span class="image-label" id="imageLabel">-</span>
+  <button class="nav-btn" id="nextBtn" disabled>&rarr;</button>
+</div>
+
+<div style="display: flex; align-items: flex-start; flex-wrap: wrap;">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <div class="loupe" id="loupe"><canvas id="loupeCanvas" width="160" height="160"></canvas></div>
+    <div class="crosshair" id="crosshair">
+      <div class="crosshair-h"></div>
+      <div class="crosshair-v"></div>
+    </div>
+  </div>
+  <div class="sidebar">
+    <div class="color-info" id="colorInfo">
+      <span class="color-preview" id="colorPreview"></span>
+      <span id="colorText">Hover over image</span>
+    </div>
+    <div class="palette-section">
+      <h2>Picked Colors (<span id="colorCount">0</span>)</h2>
+      <div class="swatches" id="swatches"></div>
+      <div class="palette-actions">
+        <button id="sortHueBtn" disabled>Sort by Hue</button>
+        <button id="sortLightBtn" disabled>Sort by Lightness</button>
+        <button id="saveBtn" disabled>Save Palette</button>
+        <button id="clearBtn" disabled>Clear</button>
+        <span class="status" id="status"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const loupeCanvas = document.getElementById('loupeCanvas');
+const loupeCtx = loupeCanvas.getContext('2d');
+const loupe = document.getElementById('loupe');
+const crosshair = document.getElementById('crosshair');
+const canvasWrap = document.getElementById('canvasWrap');
+
+let images = [];
+let imageIndex = 0;
+let palette = []; // array of [r, g, b]
+let currentPlace = '';
+
+// --- Place & image loading ---
+
+fetch('/api/places').then(r => r.json()).then(places => {
+  const sel = document.getElementById('placeSelect');
+  places.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    sel.appendChild(opt);
+  });
+});
+
+document.getElementById('placeSelect').addEventListener('change', e => {
+  currentPlace = e.target.value;
+  if (!currentPlace) return;
+  fetch(`/api/places/${currentPlace}/images`).then(r => r.json()).then(list => {
+    images = list;
+    imageIndex = 0;
+    palette = [];
+    renderPalette();
+    loadCurrentImage();
+  });
+});
+
+document.getElementById('prevBtn').addEventListener('click', () => {
+  if (imageIndex > 0) { imageIndex--; loadCurrentImage(); }
+});
+document.getElementById('nextBtn').addEventListener('click', () => {
+  if (imageIndex < images.length - 1) { imageIndex++; loadCurrentImage(); }
+});
+
+function loadCurrentImage() {
+  if (!images.length) return;
+  document.getElementById('prevBtn').disabled = imageIndex === 0;
+  document.getElementById('nextBtn').disabled = imageIndex >= images.length - 1;
+  document.getElementById('imageLabel').textContent = `${imageIndex + 1} / ${images.length}`;
+
+  const img = new Image();
+  img.onload = () => {
+    // Scale to fit max 800px wide
+    const maxW = 800;
+    const scale = Math.min(1, maxW / img.width);
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  img.src = `/images/${currentPlace}/${images[imageIndex]}`;
+}
+
+// --- Eyedropper ---
+
+function getPixel(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const x = Math.floor((e.clientX - rect.left) * scaleX);
+  const y = Math.floor((e.clientY - rect.top) * scaleY);
+  if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
+  const d = ctx.getImageData(x, y, 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2], x, y };
+}
+
+canvasWrap.addEventListener('mousemove', e => {
+  const px = getPixel(e);
+  if (!px) { loupe.style.display = 'none'; crosshair.style.display = 'none'; return; }
+
+  // Color info
+  const hex = '#' + [px.r, px.g, px.b].map(c => c.toString(16).padStart(2, '0')).join('');
+  document.getElementById('colorPreview').style.background = hex;
+  document.getElementById('colorText').textContent = `${hex}  rgb(${px.r}, ${px.g}, ${px.b})`;
+
+  // Crosshair position (in CSS coords relative to canvas-wrap)
+  const rect = canvas.getBoundingClientRect();
+  const wrapRect = canvasWrap.getBoundingClientRect();
+  const cx = e.clientX - wrapRect.left;
+  const cy = e.clientY - wrapRect.top;
+  crosshair.style.display = 'block';
+  crosshair.style.left = cx + 'px';
+  crosshair.style.top = cy + 'px';
+
+  // Loupe
+  loupe.style.display = 'block';
+  loupe.style.left = (cx + 20) + 'px';
+  loupe.style.top = (cy - 90) + 'px';
+  const r = 8; // pixels radius to magnify
+  const srcData = ctx.getImageData(
+    Math.max(0, px.x - r), Math.max(0, px.y - r),
+    r * 2, r * 2
+  );
+  loupeCtx.clearRect(0, 0, 160, 160);
+  loupeCtx.putImageData(srcData, 0, 0);
+  // Scale up via drawing the loupe canvas onto itself
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = r * 2; tmpCanvas.height = r * 2;
+  const tmpCtx = tmpCanvas.getContext('2d');
+  tmpCtx.putImageData(srcData, 0, 0);
+  loupeCtx.imageSmoothingEnabled = false;
+  loupeCtx.clearRect(0, 0, 160, 160);
+  loupeCtx.drawImage(tmpCanvas, 0, 0, 160, 160);
+});
+
+canvasWrap.addEventListener('mouseleave', () => {
+  loupe.style.display = 'none';
+  crosshair.style.display = 'none';
+});
+
+canvas.addEventListener('click', e => {
+  const px = getPixel(e);
+  if (!px) return;
+  palette.push([px.r, px.g, px.b]);
+  renderPalette();
+});
+
+// --- Palette display ---
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) { h = s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return { h, s, l };
+}
+
+function renderPalette() {
+  const container = document.getElementById('swatches');
+  container.innerHTML = '';
+  document.getElementById('colorCount').textContent = palette.length;
+
+  const hasPalette = palette.length > 0;
+  document.getElementById('sortHueBtn').disabled = !hasPalette;
+  document.getElementById('sortLightBtn').disabled = !hasPalette;
+  document.getElementById('saveBtn').disabled = !hasPalette || !currentPlace;
+  document.getElementById('clearBtn').disabled = !hasPalette;
+
+  palette.forEach((c, i) => {
+    const hex = '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+    const div = document.createElement('div');
+    div.className = 'swatch';
+    div.style.background = hex;
+
+    const remove = document.createElement('span');
+    remove.className = 'remove';
+    remove.textContent = '\u00d7';
+    remove.addEventListener('click', e => {
+      e.stopPropagation();
+      palette.splice(i, 1);
+      renderPalette();
+    });
+
+    const info = document.createElement('span');
+    info.className = 'swatch-info';
+    info.textContent = hex;
+
+    div.appendChild(remove);
+    div.appendChild(info);
+    container.appendChild(div);
+  });
+}
+
+// --- Sort ---
+
+document.getElementById('sortHueBtn').addEventListener('click', () => {
+  palette.sort((a, b) => {
+    const ha = rgbToHsl(...a).h, hb = rgbToHsl(...b).h;
+    return ha - hb;
+  });
+  renderPalette();
+});
+
+document.getElementById('sortLightBtn').addEventListener('click', () => {
+  palette.sort((a, b) => {
+    const la = rgbToHsl(...a).l, lb = rgbToHsl(...b).l;
+    return la - lb;
+  });
+  renderPalette();
+});
+
+// --- Clear ---
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  palette = [];
+  renderPalette();
+  document.getElementById('status').textContent = '';
+});
+
+// --- Save ---
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  if (!palette.length || !currentPlace) return;
+  fetch(`/api/palettes/${currentPlace}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ colors: palette }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('status').textContent = 'Saved!';
+      setTimeout(() => document.getElementById('status').textContent = '', 3000);
+    })
+    .catch(err => {
+      document.getElementById('status').textContent = 'Error: ' + err.message;
+    });
+});
+
+// --- Keyboard nav ---
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') document.getElementById('prevBtn').click();
+  if (e.key === 'ArrowRight') document.getElementById('nextBtn').click();
+});
+</script>
+</body>
+</html>
